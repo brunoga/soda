@@ -2,20 +2,19 @@ package query
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
 )
 
-type base struct {
+type base[T any] struct {
 	from   string
 	values url.Values
 }
 
-func newBase() *base {
-	return &base{
+func newBase[T any]() *base[T] {
+	return &base[T]{
 		values: make(url.Values),
 	}
 }
@@ -24,7 +23,7 @@ func newBase() *base {
 // to a valid SOAPI endpoint. The format extension is ignored and it is expected
 // that JSON result is supported by the endpoint. In case of multiple From calls,
 // the last one is what will be used.
-func (q *base) From(from string) *base {
+func (q *base[T]) From(from string) *base[T] {
 	// Force json output.
 	from = strings.TrimSuffix(from, filepath.Ext(from))
 	q.from = from + ".json"
@@ -34,39 +33,26 @@ func (q *base) From(from string) *base {
 
 // Execute sends the query to the SOAPI endpoint and returns the result. Returns
 // a nil error on success and a non-nil error on failure.
-func (q *base) Execute() ([]Result, error) {
+func (q *base[T]) Execute() (T, error) {
+	var result T
 	u, err := url.Parse(q.from)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 
 	u.RawQuery = q.values.Encode()
 
 	resp, err := http.Get(u.String())
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 	defer resp.Body.Close()
 
-	var result interface{}
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 
-	// Massage response a bit.
-	var results []Result
-	switch result.(type) {
-	case []interface{}:
-		for _, r := range result.([]interface{}) {
-			rr := r.(map[string]interface{})
-			results = append(results, Result(rr))
-		}
-	case map[string]interface{}:
-		results = []Result{Result(result.(map[string]interface{}))}
-	default:
-		return nil, fmt.Errorf("unexpected result type: %T", result)
-	}
-
-	return results, nil
+	return result, nil
 }
+
